@@ -1,0 +1,53 @@
+FROM php:7.3-apache
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+ENV DEST_DIR=/var/www/dtapi
+ENV API_DIR=${DEST_DIR}/api
+ENV APP_DIR=${DEST_DIR}/application
+
+RUN rm /etc/apt/preferences.d/no-debian-php
+
+RUN apt update && apt install -y --no-install-recommends git && \
+	apt install -y --no-install-recommends libapache2-mod-php php-mysql \
+	php-mbstring php-gd php-pdo php-xml php-cli php-curl php-http php-json && \
+	git clone https://github.com/koseven/koseven.git && \
+	git clone https://github.com/yurkovskiy/dtapi.git && \
+	mkdir -p ${DEST_DIR} && \
+	cp -r koseven/system ${API_DIR} && \
+	cp -r koseven/modules ${API_DIR} && \
+	cp koseven/public/index.php ${DEST_DIR} && \
+	cp -r dtapi/application ${DEST_DIR} && \
+	cp -r dtapi/.htaccess ${API_DIR} && \
+	mkdir ${APP_DIR}/cache ${APP_DIR}/logs && \
+	chown -R www-data:www-data ${DEST_DIR} && \
+	chmod 733 ${APP_DIR}/cache && \
+	chmod 722 ${APP_DIR}/logs && \
+	sed -i -e "s|dtapi2|dtapi|g"  ${APP_DIR}/config/database.php && \
+	sed -i -e "s|PDO_MySQL|PDO|g"  ${APP_DIR}/config/database.php && \
+	sed -i -e "s|localhost;dbname=dtapi|mysql;dbname=dtapi|g"  ${APP_DIR}/config/database.php && \
+	sed -i -e "s|'base_url'   => '/',|'base_url'   => '/api/',|g"  ${APP_DIR}/bootstrap.php && \
+	sed -i -e "s|RewriteBase /|RewriteBase /api/|g"  ${API_DIR}/.htaccess
+
+COPY ./infrastructure/dtapi.conf  /etc/apache2/sites-available/dtapi.conf
+
+RUN a2ensite dtapi \
+	&& a2dissite 000-default \
+	&& a2enmod headers \
+	&& a2enmod rewrite
+
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.35.3/install.sh | bash \
+	&& cat ~/.nvm/nvm.sh >> ~/.bashrc
+RUN nvm install 12.18.2 \
+	&& echo n | npm install -y -g @angular/cli@8.3.21
+
+RUN git clone https://github.com/yurkovskiy/IF-105.UI.dtapi.if.ua.io.git \
+	&& cd IF-105.UI.dtapi.if.ua.io \
+	&& npm install \
+	&& ng build --prod && \
+	cp -r dist/IF105/* ${DEST_DIR}
+
+EXPOSE 80
+
+ENTRYPOINT ["/usr/sbin/apache2ctl", "-D", "FOREGROUND"]
+
